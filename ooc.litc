@@ -1,0 +1,660 @@
+                            /* Object-oriented C */
+
+%! begin
+The following header file puts together a few ideas that I got from Axel-Tobias
+Schreiner's book, Object-Oriented Programming With ANSI-C. The basic concept
+sounds quite abstract at first, but becomes straightforward as you get used to
+it.
+
+1. THE HEADER FILE: object.h
+
+We represent objects as pointers to instances of data structures which contain
+among the information pointers to functions: the object's methods. We would
+declare a vector, for example, with struct vector * v. Using this pointer, you
+can then extract information such as the dimensionality (v->dim) or the first
+component (v->dat[0]), but you can also call functions like v->clone(v), which
+returns a copy of the vector.
+
+Instead of writing v->clone(v), we would like to write clone(v), and this
+function should work correctly for any vector or any other object that inherits
+from vector. We can achieve this by means of dynamic linking and declaring
+objects as void pointers, which we will then cast as the relevant data
+structures whenever we need to.
+
+We begin by defining the Class data structure. Every root object begins with a
+void pointer set to the address of a struct Class variable that identifies it as
+the right type of object:
+
+     struct MyRootObject {
+       const void * class; // This line must come first
+       ...
+     }
+
+We define the classes as global variables that contain the following
+information: size of the object struct, name (a short string of up to 16 chars),
+a pointer to the parent object (or NULL if it does not inherit from another
+object) and pointers to the constructor and destructor functions.
+................................................................................
+%! codeblock: class_struct_definition
+# define MAX_NAME_SIZE 16
+typedef struct Class {
+  size_t size;
+  char name[MAX_NAME_SIZE];
+  const void * parent;
+  void * (* constructor) (void * self, va_list * arguments);
+  void * (* destructor) (void * self);
+} Class;
+%! codeblockend
+................................................................................
+
+We can now define an abstract object as our first root object. It will include
+three new methods (differs, clone and display) which will compare, copy and
+display the information of objects. We will implement these functions later on.
+................................................................................
+%! codeblock: abstract_object_definition
+struct abstract_object {
+  const void * class; /* This item must come first */
+  int (* differs) (void * self, void * b);
+  void * (* clone) (const void * self);
+  void * (* display) (const void * self, FILE * fp);
+};
+
+static void * abstract_object_constructor(void * _self, va_list * args);
+static void * abstract_object_destructor(void * _self);
+int abstract_object_differs(void * _a, void * _b);
+static void * abstract_object_clone(const void * _self);
+void * abstract_object_display(const void * _self, FILE * fp);
+void * vector_cross(const void * _v, const void * _w);
+
+static const Class _abstract_object
+  = {sizeof(struct abstract_object), "abstract object", NULL,
+     abstract_object_constructor, abstract_object_destructor};
+
+const void * abstract_object = &_abstract_object;
+%! codeblockend
+................................................................................
+
+To create a new object, we use the macro new(variable_name, class), which calls
+the function in charge of pointing the object->class variable to the right
+information, allocating space for the object and calling its constructor. The
+delete function calls the destructor and frees the memory reserved for class.
+................................................................................
+%! codefile: object.h
+# ifndef OBJECT_H
+# define OBJECT_H
+
+# include <stdio.h>
+# include <stdlib.h>
+# include <stdarg.h>
+
+# define VA_ARGS(...) , ##__VA_ARGS__
+# define new(varname, vartype, ...) \
+         void * _##varname = new_object(vartype VA_ARGS(__VA_ARGS__)); \
+         struct vartype * varname = _##varname;
+
+# define Object void *
+
+/* Abstract class types */
+%! codeinsert: class_struct_definition
+
+/* Create an instance of a specified class */
+void * new_object(const void * _class, ...)
+{
+  const Class * class = _class; /* Cast void pointer to Class pointer */
+  void * objectPointer = calloc(1, class->size); /* Memory allocation */
+
+  /* Check for errors */
+  if(objectPointer == NULL) {
+    fprintf(stderr, "Error: new: unable to allocate memory for object.\n");
+    exit(-1);
+  }
+
+  /* Make object identify as belonging to class */
+  * (const Class **) objectPointer = class;
+  /* NOTE: because of the previous line, all root object structs MUST be written
+     like this:
+
+     struct MyRootObject {
+       const void * class; // This line must come first
+       ...
+     }
+  */
+
+  /* Call the constructor (if it exists) providing the arguments */
+  if(class->constructor) {
+    va_list args;
+    va_start(args, _class);
+    objectPointer = class->constructor(objectPointer, &args);
+    va_end(args);
+  }
+
+  return objectPointer;
+}
+
+/* Free memory allocated to an object */
+void delete(void * _self)
+{
+  const struct Class ** objectPointer = _self;
+
+  if(_self && *objectPointer && (*objectPointer)->destructor)
+    _self = (*objectPointer)->destructor(_self);
+
+  free(_self);
+
+  return;
+}
+
+%! codepause
+................................................................................
+
+In addition to new and delete, a few functions apply to any object.
+- object_size(obj): get the size of obj.
+- is_a(obj, class): determine whether obj is of type class.
+- inherits_from(obj, class): determine whether obj inherits from the type class.
+
+Use inherits_from carefully. If your second argument were not a valid class
+name, then the compiler would issue a warning, but you would get code that might
+send your pointer on a wild-goose chase into the memory jungle.
+................................................................................
+%! codecontinue: object.h
+/* Size of an object in bytes */
+size_t object_size(const void * _self)
+{
+  const struct Class * const * self = _self;
+  if(_self && *self)
+    return (*self)->size;
+  return (size_t) 0;
+}
+
+/* Is an object of type class? */
+int is_a(void * _self, const void * _class)
+{
+  struct Class ** self = _self;
+  const struct Class * class = _class;
+  return (*self) == class;
+}
+
+/* Search ancestors for class type */
+int inherits_from(const void * _self, const struct Class * class)
+{
+  const struct Class * const * self = _self;
+  const struct Class * ancestor_class = (*self);
+  while(ancestor_class) {
+    if(ancestor_class == class) return 1;
+    ancestor_class = ancestor_class->parent;
+  }
+  return 0;
+}
+
+%! codepause
+................................................................................
+
+Returning to the abstract object structure defined above, let us now write out
+its constructor, destructor and additional methods.
+................................................................................
+%! codecontinue: object.h
+/* Abstract object */
+%! codeinsert: abstract_object_definition
+
+/* Abstract object constructor */
+static void * abstract_object_constructor(void * _self, va_list * args)
+{
+  struct abstract_object * self = _self;
+  self->differs = abstract_object_differs;
+  self->clone = abstract_object_clone;
+  self->display = abstract_object_display;
+  return _self;
+}
+
+/* Abstract object destructor */
+static void * abstract_object_destructor(void * _self)
+{
+  return NULL;
+}
+
+/* Does abstract object a differ from abstract object b? */
+int abstract_object_differs(void * _a, void * _b)
+{
+  struct abstract_object * a = _a;
+  struct abstract_object * b = _b;
+  return a != b;
+}
+
+/* Make a copy of an object */
+static void * abstract_object_clone(const void * _self)
+{
+  const struct abstract_object * self = _self;
+  if(self) {
+    new(new_abstract_object, abstract_object);
+    return new_abstract_object;
+  }
+  return NULL;
+}
+
+/* Display information about an abstract object */
+void * abstract_object_display(const void * _self, FILE * fp)
+{
+  const struct abstract_object * self = _self;
+  const struct Class * class = self->class;
+  const struct Class * parent = class->parent;
+  fprintf(fp, "Object: %p\n", self);
+  fprintf(fp, "Class: %s\n", class->name);
+  fprintf(fp, "Size: %lu\n", class->size);
+  if(class->parent) fprintf(fp, "Parent: %s\n", parent->name);
+
+  return (void *) _self;
+}
+%! codepause
+................................................................................
+
+Finally, we write the display, clone and differs interfaces, which should link
+the appropriate functions dynamically.
+................................................................................
+%! codecontinue: object.h
+/* Display object */
+void * display(const void * _self, FILE * fp)
+{
+  const struct abstract_object * self = _self;
+  if(inherits_from(self, abstract_object)) {
+    if(self->display) return self->display(self, fp);
+  }
+  return NULL;
+}
+
+/* Make a copy of an instance of some class */
+void * clone(const void * _self)
+{
+  const struct abstract_object * self = _self;
+  if(inherits_from(self, abstract_object)) {
+    if(self && self->clone)
+      return self->clone(self);
+  }
+  return NULL;
+}
+
+/* Does the instance differ from instance b? */
+int differs(void * _self, void * b)
+{
+  const struct abstract_object * self = _self;
+  if(inherits_from(self, abstract_object)) {
+    if(self && self->differs)
+      return self->differs(_self, b);
+  }
+  return 1;
+}
+# endif
+%! codeend
+................................................................................
+
+Before we move on to writing the code for an interesting class, we should have a
+look at an example illustrating how the object-oriented syntax works.
+................................................................................
+%! codefile: examples/abstract_object_example.c
+# include <stdio.h>
+# include "../object.h"
+
+int main()
+{
+  new(a, abstract_object);
+  new(b, abstract_object);
+  Object c = clone(a);
+
+  display(a, stdout);
+  display(b, stdout);
+  display(c, stdout);
+
+  printf("a == a ? %d\n", !differs(a,a));
+  printf("a == b ? %d\n", !differs(a,b));
+  printf("a == c ? %d\n", !differs(a,c));
+
+  printf("is b an abstract object? %d\n", is_a(b, abstract_object));
+  printf("Does b inherit from abstract object? %d\n",
+         inherits_from(b, abstract_object));
+
+  printf("Size of a: %lu\n", object_size(a));
+
+  delete(a);
+  delete(b);
+  delete(c);
+
+  return 0;
+}
+%! codeend
+................................................................................
+
+2. VECTORS
+
+The vector class extends abstract_object by adding an array of real numbers of
+length dim. It inherits the behaviour of differs and display, but overwrites
+clone in order to copy the values of the vector dimensionality and elements.
+................................................................................
+%! codeblock: vector_definition
+# ifndef REAL
+# define REAL DOUBLE
+# define real double
+# define real_val(x) x
+# endif
+
+struct vector {
+  const struct abstract_object _; /* This item must come first */
+  int dim; /* Dimensionality */
+  real * dat;
+};
+
+static void * vector_constructor(void * _self, va_list * args);
+static void * vector_destructor(void * _self);
+static void * vector_clone(const void * _self);
+
+static const Class _vector
+  = {sizeof(struct vector), "vector", &_abstract_object,
+     vector_constructor, vector_destructor};
+
+const void * vector = &_vector;
+%! codeblockend
+................................................................................
+
+The constructor calls the parent constructor and then sets the default values of
+dim and dat. The destructor frees the memory allocated to dat. As mentioned
+above, clone will copy dim and dat to the new vector instance.
+................................................................................
+%! codeblock: vector_methods
+static void * vector_constructor(void * _self, va_list * args)
+{
+  struct abstract_object * obj =  abstract_object_constructor(_self, args);
+  obj->clone = vector_clone;
+  struct vector * self = _self;
+  self->dim = 0;
+  self->dat = NULL;
+  return _self;
+}
+
+static void * vector_destructor(void * _self)
+{
+  struct vector * self = _self;
+  free(self->dat);
+  return NULL;
+}
+
+/* Special version of clone for copying vectors */
+static void * vector_clone(const void * _self)
+{
+  const struct vector * self = _self;
+  if(inherits_from(self, vector)) {
+    new(w, vector);
+    vector_set_dim(w, self->dim);
+    for(int i = 0; i < self->dim; ++i) w->dat[i] = self->dat[i];
+    return w;
+  }
+  return NULL;
+}
+%! codeblockend
+................................................................................
+
+Now comes the interesting part, which forms the bulk of our vectors.h header
+file. We will define a set of operations on vectors as functions which take
+objects as their arguments. If the objects can be interpreted as vectors (that
+is, if they are vectors or inherit from the vector class) then the operations
+are carried out.
+
+The new macro will create zero-dimensional vectors, but you then use
+vector_set_dim to change their dimensionality. You can assign values to the
+elements directly in the usual way: v->dat[i] = 0.0, for example.
+
+Use vector_print to write out a vector in the format (1.0, 2.0, 3.0).
+
+After vector_print, the code describes how to add, subtract, multiply by a
+scalar, and calculate dot and cross products and norm.
+
+Pay attention now, as vector operations could become an important source of
+memory leaks. Note that some operations return a vector in the form of a void
+pointer. This should not cause any trouble when we assign these pointers, as
+in u = vector_cross(v, w). However, when we nest functions and discard the
+returned pointers, as when we write
+
+  vector_print(vector_cross(vector_add(u, v), w), stdout);
+
+we are allocating memory to the intermediate results, and this memory which
+never gets freed. The safe way to deal with the issue involves always assigning
+the result to a void pointer and then applying free to it. Hence, we would
+rewrite the line of code above as:
+
+  void * vptr, vptr2;
+  vector_print(vptr2 = vector_cross(vptr = vector_add(u, v), w), stdout);
+  free(vptr);
+  free(vptr2);
+
+................................................................................
+%! codefile: vector.h
+# ifndef VECTOR_H
+# define VECTOR_H
+# include <stdio.h>
+# include <stdlib.h>
+# include <stdarg.h>
+# include <math.h>
+# include "object.h"
+
+%! codeinsert: vector_definition
+
+/*** Vector operations ***/
+
+void vector_set_dim(void * _self, int dim);
+void vector_print(const void * _self, FILE * fp);
+void * vector_add(const void * _v, const void * _w);
+void * vector_subtract(const void * _v, const void * _w);
+void * vector_prod(const real lambda, const void * _v);
+real vector_dot(const void * _v, const void * _w);
+real vector_norm(const void * _v);
+
+%! codeinsert: vector_methods
+
+
+/* Set vector dimensionality */
+void vector_set_dim(void * _self, int dim)
+{
+  struct vector * self = _self;
+  if(inherits_from(self, vector)) {
+    self->dim = dim;
+    if(self->dat == NULL)
+      self->dat = (real *) calloc(dim, sizeof(real));
+    else
+      self->dat = (real *) realloc(self, dim);
+  }
+
+  return;
+}
+
+/* Display a vector */
+void vector_print(const void * _self, FILE * fp)
+{
+  const struct vector * self = _self;
+  if(inherits_from(self, vector) && self->dim > 0) {
+    fprintf(fp, "(%f", self->dat[0]);
+    for(int i = 1; i < self->dim; ++i)
+      fprintf(fp, ", %f", self->dat[i]);
+    fprintf(fp, ")");
+  } else fprintf(fp, "()");
+
+  return;
+}
+
+/* Add and subtract vectors */
+void * vector_add(const void * _v, const void * _w)
+{
+  const struct vector * v = _v;
+  const struct vector * w = _w;
+  struct vector * uminus = (struct vector *) v;
+  struct vector * uplus = (struct vector *) w;
+  if(v->dim > w->dim) {
+    uminus = (struct vector *) w;
+    uplus = (struct vector *) v;
+  }
+
+  if(inherits_from(v, vector) && inherits_from(w, vector)) {
+    new(vplusw, vector);
+    vector_set_dim(vplusw, uplus->dim);
+    for(int i = 0; i < uminus->dim; ++i)
+      vplusw->dat[i] = uminus->dat[i] + uplus->dat[i];
+    for(int i = uminus->dim + 1; i < uplus->dim; ++i)
+      vplusw->dat[i] = uplus->dat[i];
+    return vplusw;
+  }
+  return NULL;
+}
+
+void * vector_subtract(const void * _v, const void * _w)
+{
+  const struct vector * v = _v;
+  const struct vector * w = _w;
+  struct vector * uminus = (struct vector *) v;
+  struct vector * uplus = (struct vector *) w;
+  if(v->dim > w->dim) {
+    uminus = (struct vector *) w;
+    uplus = (struct vector *) v;
+  }
+
+  if(inherits_from(v, vector) && inherits_from(w, vector)) {
+    new(vminusw, vector);
+    vector_set_dim(vminusw, uplus->dim);
+    for(int i = 0; i < uminus->dim; ++i)
+      vminusw->dat[i] = uminus->dat[i] + uplus->dat[i];
+    for(int i = uminus->dim + 1; i < uplus->dim; ++i)
+      vminusw->dat[i] = uplus->dat[i];
+    return vminusw;
+  }
+  return NULL;
+}
+
+/* Real number times a vector */
+void * vector_prod(const real lambda, const void * _v)
+{
+  const struct vector * v = _v;
+  if(inherits_from(v, vector)) {
+    new(lambda_v, vector);
+    vector_set_dim(lambda_v, v->dim);
+    for(int i = 0; i < lambda_v->dim; ++i)
+      lambda_v->dat[i] = lambda*v->dat[i];
+    return lambda_v;
+  }
+  return NULL;
+}
+
+/* Dot product and norm of a vector */
+real vector_dot(const void * _v, const void * _w)
+{
+  const struct vector * v = _v;
+  const struct vector * w = _w;
+  real dotproduct = 0;
+  if(inherits_from(v, vector) && inherits_from(w, vector)) {
+    for(int i = 0; i < fmax(v->dim, w->dim); ++i)
+      dotproduct += v->dat[i]*w->dat[i];
+  }
+  return dotproduct;
+}
+
+real vector_norm(const void * _v)
+{
+  const struct vector * v = _v;
+  if(inherits_from(v, vector)) return sqrt(vector_dot(v, v));
+  return real_val(0.0);
+}
+
+/* Cross product */
+void * vector_cross(const void * _v, const void * _w)
+{
+  const struct vector * v = _v;
+  const struct vector * w = _w;
+  new(cross, vector);
+  vector_set_dim(cross, 3);
+  if(inherits_from(v, vector) && inherits_from(w, vector)) {
+    real a[3] = {0}; for(int i = 0; i < v->dim; ++i) a[i] = v->dat[i];
+    real b[3] = {0}; for(int i = 0; i < w->dim; ++i) b[i] = w->dat[i];
+    cross->dat[0] = a[1]*b[2] - a[2]*b[1];
+    cross->dat[1] = a[2]*b[0] - a[0]*b[2];
+    cross->dat[2] = a[0]*b[1] - a[1]*b[0];
+  }
+  return cross;
+}
+# endif
+%! codeend
+................................................................................
+
+We end with a short program that tests the operations defined above.
+................................................................................
+%! codefile: examples/vector_example.c
+# include <stdio.h>
+# include "../vector.h"
+
+int main()
+{
+  void * vptr, * vptr2;
+
+  /* Vector v */
+  new(v, vector);
+  vector_set_dim(v, 3);
+  v->dat[0] = 1.12;
+  v->dat[1] = 0;
+  v->dat[2] = -2;
+  printf("v = "); vector_print(v, stdout); printf("\n");
+  display(v,stdout);
+  printf("v inherits from vector? %d\n", inherits_from(v, vector));
+  printf("v inherits from abstract object? %d\n",
+         inherits_from(v, abstract_object));
+
+  /* Vector w */
+  struct vector * w = clone(v);
+  w->dat[0] = 0.0;
+  w->dat[1] = 1;
+  w->dat[2] = -5;
+  printf("\nw = "); vector_print(w, stdout); printf("\n");
+  display(w, stdout);
+
+  /* Vector operations */
+  printf("\nv + w = "); vector_print(vptr = vector_add(v,w), stdout);
+  free(vptr);
+  printf("\nv - w = ");
+  vector_print(vptr = vector_subtract(v,w), stdout);
+  free(vptr);
+  printf("\n3 v = ");
+  vector_print(vptr2 = vector_prod(3, vptr = vector_add(v,w)), stdout);
+  free(vptr);
+  free(vptr2);
+  printf("\n");
+  fprintf(stderr, "<v, v> = %f\n", vector_dot(v, v));
+  fprintf(stderr, "||v|| = %f\n", vector_norm(v));
+  fprintf(stderr, "v x w = ");
+  vector_print(vptr = vector_cross(v, w), stdout);
+  free(vptr);
+  printf("\n");
+
+  /* Clean up */
+  delete(v);
+  delete(w);
+
+  return 0;
+}
+%! codeend
+................................................................................
+
+3. MAKEFILE
+
+................................................................................
+%! codefile: Makefile
+all: tangle test
+
+tangle:
+	txt2tangle ooc.litc
+	txt2tangle list.litc
+	txt2tangle matrix.litc
+
+test:
+	$(info ***** Compiling and running tests... *****)
+	gcc -Wall examples/abstract_object_example.c -o examples/abstract_object_example
+	./examples/abstract_object_example
+	gcc -Wall examples/vector_example.c -o examples/vector_example -lm
+	./examples/vector_example
+	gcc -Wall examples/matrix_example.c -o examples/matrix_example -lm
+	./examples/matrix_example
+%! codeend
+................................................................................
+
+%! end
