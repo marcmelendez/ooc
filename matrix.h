@@ -17,6 +17,7 @@ struct matrix {
 static void * matrix_constructor(void * _self, va_list * args);
 static void * matrix_destructor(void * _self);
 static void * matrix_clone(const void * _self);
+static void * matrix_display(const void * _self, FILE * fp);
 
 static const Class _matrix
   = {sizeof(struct matrix), "matrix", &_abstract_object,
@@ -40,6 +41,7 @@ static void * matrix_constructor(void * _self, va_list * args)
 {
   struct abstract_object * obj =  abstract_object_constructor(_self, args);
   obj->clone = matrix_clone;
+  obj->display = matrix_display;
   struct matrix * self = _self;
   self->rows = 0;
   self->cols = 0;
@@ -63,6 +65,18 @@ static void * matrix_clone(const void * _self)
     matrix_set_dim(A, self->rows, self->cols);
     for(int i = 0; i < self->rows*self->cols; ++i) A->dat[i] = self->dat[i];
     return A;
+  }
+  return NULL;
+}
+
+/* Displaying matrices */
+static void * matrix_display(const void * _self, FILE * fp)
+{
+  abstract_object_display(_self, fp);
+
+  if(inherits_from(_self, matrix)) {
+    const struct matrix * self = _self;
+    fprintf(fp, "dim: %d x %d\n", self->rows, self->cols);
   }
   return NULL;
 }

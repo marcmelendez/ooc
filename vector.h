@@ -21,6 +21,7 @@ struct vector {
 static void * vector_constructor(void * _self, va_list * args);
 static void * vector_destructor(void * _self);
 static void * vector_clone(const void * _self);
+static void * vector_display(const void * _self, FILE * fp);
 
 static const Class _vector
   = {sizeof(struct vector), "vector", &_abstract_object,
@@ -42,6 +43,7 @@ static void * vector_constructor(void * _self, va_list * args)
 {
   struct abstract_object * obj =  abstract_object_constructor(_self, args);
   obj->clone = vector_clone;
+  obj->display = vector_display;
   struct vector * self = _self;
   self->dim = 0;
   self->dat = NULL;
@@ -58,12 +60,24 @@ static void * vector_destructor(void * _self)
 /* Special version of clone for copying vectors */
 static void * vector_clone(const void * _self)
 {
-  const struct vector * self = _self;
-  if(inherits_from(self, vector)) {
+  if(inherits_from(_self, vector)) {
+    const struct vector * self = _self;
     new(w, vector);
     vector_set_dim(w, self->dim);
     for(int i = 0; i < self->dim; ++i) w->dat[i] = self->dat[i];
     return w;
+  }
+  return NULL;
+}
+
+/* Displaying vectors */
+static void * vector_display(const void * _self, FILE * fp)
+{
+  abstract_object_display(_self, fp);
+
+  if(inherits_from(_self, vector)) {
+    const struct vector * self = _self;
+    fprintf(fp, "dim: %d\n", self->dim);
   }
   return NULL;
 }
