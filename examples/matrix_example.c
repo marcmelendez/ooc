@@ -22,6 +22,7 @@ int main()
     for(int j = 0; j < M->cols; ++j)
       M->dat[M->cols*i + j] = i + j;
   printf("M = \n"); matrix_print(M, stdout);
+  display(M, stdout);
 
   /* Matrix A = 3I */
   new(A, matrix);
