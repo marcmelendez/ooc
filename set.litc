@@ -64,6 +64,9 @@ int set_equal(const void * _A, const void * _B);
 %! codeblockend
 ................................................................................
 
+We'll include generic functions for find, insert, drop and equal with dynamic
+linking to the specific versions for sets or the appropriate method in
+descendants of the set class.
 ................................................................................
 %! codeblock: set_functions
 /* Constructor */
@@ -219,6 +222,8 @@ int set_equal(const void * _A, const void * _B)
 %! codeblockend
 ................................................................................
 
+The code above creates particularly simple concepts and syntax to deal with
+sets, as seen in the example below.
 ................................................................................
 %! codefile: examples/set_example.c
 # include <stdio.h>

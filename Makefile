@@ -2,8 +2,8 @@ all: tangle test
 
 tangle:
 	txt2tangle ooc.litc
-	txt2tangle list.litc
 	txt2tangle matrix.litc
+	txt2tangle set.litc
 
 test:
 	$(info ***** Compiling and running tests... *****)
@@ -13,3 +13,5 @@ test:
 	./examples/vector_example
 	gcc -Wall examples/matrix_example.c -o examples/matrix_example -lm
 	./examples/matrix_example
+	gcc -Wall examples/set_example.c -o examples/set_example -lm
+	./examples/set_example
