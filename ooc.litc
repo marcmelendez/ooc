@@ -78,6 +78,11 @@ To create a new object, we use the macro new(variable_name, class), which calls
 the function in charge of pointing the object->class variable to the right
 information, allocating space for the object and calling its constructor. The
 delete function calls the destructor and frees the memory reserved for class.
+
+The new macro always adds a trailing NULL argument at the end of the new_object
+call. In this way, we can write constructors that take and arbitrary number of
+arguments, but know that they have to stop reading them when they get NULL at
+the end of the list.
 ................................................................................
 %! codefile: object.h
 # ifndef OBJECT_H
@@ -89,7 +94,7 @@ delete function calls the destructor and frees the memory reserved for class.
 
 # define VA_ARGS(...) , ##__VA_ARGS__
 # define new(varname, vartype, ...) \
-         void * _##varname = new_object(vartype VA_ARGS(__VA_ARGS__)); \
+         void * _##varname = new_object(vartype VA_ARGS(__VA_ARGS__), NULL); \
          struct vartype * varname = _##varname;
 
 # define Object void *
@@ -660,6 +665,7 @@ tangle:
 	txt2tangle ooc.litc
 	txt2tangle matrix.litc
 	txt2tangle set.litc
+	txt2tangle iterator.litc
 
 test:
 	$(info ***** Compiling and running tests... *****)
@@ -671,6 +677,8 @@ test:
 	./examples/matrix_example
 	gcc -Wall examples/set_example.c -o examples/set_example -lm
 	./examples/set_example
+	gcc -Wall examples/iterator_example.c -o examples/iterator_example -lm
+	./examples/iterator_example
 %! codeend
 ................................................................................
 

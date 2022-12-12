@@ -7,7 +7,7 @@
 
 # define VA_ARGS(...) , ##__VA_ARGS__
 # define new(varname, vartype, ...) \
-         void * _##varname = new_object(vartype VA_ARGS(__VA_ARGS__)); \
+         void * _##varname = new_object(vartype VA_ARGS(__VA_ARGS__), NULL); \
          struct vartype * varname = _##varname;
 
 # define Object void *
