@@ -1,11 +1,12 @@
                               /* iterator.litc */
 
+%! begin
+An iterator may be thought of as a list of elements of the same type, with the
+type being one of the options included in the list below. They should work in a
+way analogous to the i variable in a typical for(int i = 0; i < N; ++i) loop. We
+want to move forwards or backwards in the list and read the present value.
 ................................................................................
-%! codefile: iterator.h
-# ifndef ITERATOR_H
-# define ITERATOR_H
-# include "object.h"
-
+%! codeblock: iterator_value_struct
 # ifndef VARIABLE_TYPE
 # define VARIABLE_TYPE
 typedef enum {POINTER = 0, INT, FLOAT, DOUBLE, CHAR, STRING} variable_type;
@@ -19,6 +20,35 @@ union iterator_value {
   char * s;
   void * p;
 };
+%! codeblockend
+................................................................................
+
+The following code snippet illustrates how we would like iterators to work.
+It represents a standard for loop, which we would obviously normally write in
+the usual simple way in real life. The idea, though, is that the new syntax will
+also allow us to iterate over sets more cumbersome than integers using the same
+interface.
+................................................................................
+%! codeblock: for_example
+  new(it, iterator, INT);
+
+  for(set(it, (union iterator_value) 10); get(it).i < 20; next(it))
+    printf("i = %d\n", get(it).i);
+
+  delete(it);
+%! codeblockend
+................................................................................
+
+We'll define iterators as one of our occ classes, overwriting the constructor,
+clone and display methods. In addition, we need methods to set and read the
+current value of the iterator and make it advance or return.
+................................................................................
+%! codefile: iterator.h
+# ifndef ITERATOR_H
+# define ITERATOR_H
+# include "object.h"
+
+%! codeinsert: iterator_value_struct
 
 struct iterator {
   const struct abstract_object _; /* This item must come first */
@@ -46,30 +76,33 @@ static const Class _iterator
 
 const void * iterator = &_iterator;
 
-static void * iterator_constructor(void * _self, va_list * args)
-{
-  struct abstract_object * obj =  abstract_object_constructor(_self, args);
-  obj->clone = iterator_clone;
-  obj->display = iterator_display;
-  struct iterator * self = _self;
+%! codeinsert: iterator_constructor
 
-  variable_type val_type = va_arg(*args, variable_type);
+%! codeinsert: iterator_clone
 
-  if(val_type >= 0 && val_type <= STRING) {
-    self->val_type = (variable_type) val_type;
-  } else {
-    self->val_type = POINTER;
-  }
-  self->val = (union iterator_value) NULL;
+%! codeinsert: iterator_display
 
-  self->next = iterator_next;
-  self->prev = iterator_prev;
-  self->set = iterator_set;
-  self->get = iterator_get;
+%! codeinsert: iterator_next
 
-  return _self;
-}
+%! codeinsert: iterator_prev
 
+%! codeinsert: iterator_set
+
+%! codeinsert: iterator_type
+
+%! codeinsert: iterator_get
+
+%! codeinsert: iterator_generic_functions
+
+# endif
+%! codeend
+................................................................................
+
+The clone method just creates a new iterator and copies the values of val_type
+and val. To display, we call the parent method and then add the print out the
+extra information for iterators at the end.
+................................................................................
+%! codeblock: iterator_clone
 static void * iterator_clone(const void * _self)
 {
   if(inherits_from(_self, iterator)) {
@@ -81,7 +114,9 @@ static void * iterator_clone(const void * _self)
   }
   return NULL;
 }
+%! codeblockend
 
+%! codeblock: iterator_display
 static void * iterator_display(const void * _self, FILE * fp)
 {
   abstract_object_display(_self, fp);
@@ -111,7 +146,44 @@ static void * iterator_display(const void * _self, FILE * fp)
   }
   return NULL;
 }
+%! codeblockend
+................................................................................
 
+The constructor allows an extra variable in the new macro to specify the type of
+variable saved in val. By default, it will consider val a void pointer to NULL.
+................................................................................
+%! codeblock: iterator_constructor
+static void * iterator_constructor(void * _self, va_list * args)
+{
+  struct abstract_object * obj =  abstract_object_constructor(_self, args);
+  obj->clone = iterator_clone;
+  obj->display = iterator_display;
+  struct iterator * self = _self;
+
+  variable_type val_type = va_arg(*args, variable_type);
+
+  if(val_type >= 0 && val_type <= STRING) {
+    self->val_type = (variable_type) val_type;
+  } else {
+    self->val_type = POINTER;
+  }
+  self->val = (union iterator_value) NULL;
+
+  self->next = iterator_next;
+  self->prev = iterator_prev;
+  self->set = iterator_set;
+  self->get = iterator_get;
+
+  return _self;
+}
+%! codeblockend
+................................................................................
+
+The next and prev functions act differently depending on the type of value. For
+an integer, next should move on to the following integer, but a pointer iterator
+should go to the subsequent memory address, for example.
+................................................................................
+%! codeblock: iterator_next
 union iterator_value iterator_next(void * _self)
 {
   struct iterator * self = _self;
@@ -137,7 +209,9 @@ union iterator_value iterator_next(void * _self)
 
   return self->val;
 }
+%! codeblockend
 
+%! codeblock: iterator_prev
 union iterator_value iterator_prev(void * _self)
 {
   struct iterator * self = _self;
@@ -160,7 +234,23 @@ union iterator_value iterator_prev(void * _self)
 
   return self->val;
 }
+%! codeblockend
+................................................................................
 
+Finally, we have functions to set or reset the value of an iterator, to read its
+type and its current value.
+................................................................................
+%! codeblock: iterator_set
+union iterator_value iterator_set(void * _self, union iterator_value val)
+{
+  struct iterator * self = _self;
+  self->val = val;
+
+  return self->val;
+}
+%! codeblockend
+
+%! codeblock: iterator_type
 variable_type iterator_type(const void * _self)
 {
   if(inherits_from(_self, iterator)) {
@@ -169,21 +259,21 @@ variable_type iterator_type(const void * _self)
   }
   return -1;
 }
+%! codeblockend
 
-union iterator_value iterator_set(void * _self, union iterator_value val)
-{
-  struct iterator * self = _self;
-  self->val = val;
-
-  return self->val;
-}
-
+%! codeblock: iterator_get
 union iterator_value iterator_get(void * _self)
 {
   struct iterator * self = _self;
   return self->val;
 }
+%! codeblockend
+................................................................................
 
+The generic versions of next, prev, set and get follow. They should work on any
+objects that inherit from iterator.
+................................................................................
+%! codeblock: iterator_generic_functions
 union iterator_value next(void * _self)
 {
   if(inherits_from(_self, iterator)) {
@@ -219,29 +309,27 @@ union iterator_value get(void * _self)
   }
   return (union iterator_value) NULL;
 }
-
-# endif
-%! codeend
-................................................................................
-
-................................................................................
-%! codeblock: for_example
-  new(i, iterator, INT);
-
-  for(iterator_set(i, (union iterator_value) 10); i->val.i < 20; next(i))
-    printf("i = %d\n", i->val.i);
-
-  delete(i);
 %! codeblockend
 ................................................................................
 
-Time example
-................................................................................
-%! codefile: examples/iterator_example.c
-# include <stdio.h>
-# include <math.h>
-# include "../iterator.h"
+As an example of the kind of applications that I have in mind, I'll write a time
+iterator for physics simulations. In many applications, you can get away with
+writing a simple for loop for the time, like this:
 
+  double t;
+  for(t = 0; t < tmax; t += dt)
+
+However, errors can accumulate in floating point additions, so we will create an
+iterator capable of giving us the next or previous time without any loss of
+precision as the simulation proceeds. The time iterator will store the value of
+the initial time t0 and the number of steps nsteps of size dt to the current
+time, and calculate the latter as t = t0 + nsteps*dt.
+
+We will need to override several functions: clone, display, next, prev and set.
+We'll also introduce a new function, time_iterator_step, which allows us to set
+the variable dt.
+................................................................................
+%! codeblock: time_iterator
 struct time_iterator {
   const struct iterator _;
   double t0;
@@ -361,17 +449,22 @@ union iterator_value time_iterator_dt(void * _self, double val)
   struct iterator * self = _self;
   return self->val;
 }
+%! codeblockend
+................................................................................
+
+The main function below should serve as a check that everything compiles and
+runs as expected.
+................................................................................
+%! codefile: examples/iterator_example.c
+# include <stdio.h>
+# include <math.h>
+# include "../iterator.h"
+
+%! codeinsert: time_iterator
 
 int main() {
   /* Standard for loop */
-  new(i, iterator, INT);
-  display(i, stderr);
-
-  for(iterator_set(i, (union iterator_value) 10);
-      i->val.i < 20; next(i))
-    printf("i = %d\n", i->val.i);
-
-  delete(i);
+  %! codeinsert: for_example
 
   /* Time loops */
   new(time, time_iterator);
@@ -398,3 +491,4 @@ int main() {
 }
 %! codeend
 ................................................................................
+%! end

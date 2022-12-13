@@ -124,14 +124,12 @@ union iterator_value time_iterator_dt(void * _self, double val)
 
 int main() {
   /* Standard for loop */
-  new(i, iterator, INT);
-  display(i, stderr);
+  new(it, iterator, INT);
 
-  for(iterator_set(i, (union iterator_value) 10);
-      i->val.i < 20; next(i))
-    printf("i = %d\n", i->val.i);
+  for(set(it, (union iterator_value) 10); get(it).i < 20; next(it))
+    printf("i = %d\n", get(it).i);
 
-  delete(i);
+  delete(it);
 
   /* Time loops */
   new(time, time_iterator);
@@ -146,7 +144,7 @@ int main() {
   printf("\n");
 
   for(double t = set(time, (union iterator_value) 5.0).d;
-      t > 1.0; t = prev(time).d) {
+      t > 0.0; t = prev(time).d) {
     printf("%f  %f  %f\n", t, cos(t), sin(t));
   }
 

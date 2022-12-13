@@ -157,6 +157,14 @@ union iterator_value iterator_prev(void * _self)
   return self->val;
 }
 
+union iterator_value iterator_set(void * _self, union iterator_value val)
+{
+  struct iterator * self = _self;
+  self->val = val;
+
+  return self->val;
+}
+
 variable_type iterator_type(const void * _self)
 {
   if(inherits_from(_self, iterator)) {
@@ -164,14 +172,6 @@ variable_type iterator_type(const void * _self)
     return self->val_type;
   }
   return -1;
-}
-
-union iterator_value iterator_set(void * _self, union iterator_value val)
-{
-  struct iterator * self = _self;
-  self->val = val;
-
-  return self->val;
 }
 
 union iterator_value iterator_get(void * _self)
