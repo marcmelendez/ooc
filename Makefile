@@ -5,6 +5,7 @@ tangle:
 	txt2tangle matrix.litc
 	txt2tangle set.litc
 	txt2tangle iterator.litc
+	txt2tangle list.litc
 
 test:
 	$(info ***** Compiling and running tests... *****)
@@ -18,3 +19,5 @@ test:
 	./examples/set_example
 	gcc -Wall examples/iterator_example.c -o examples/iterator_example -lm
 	./examples/iterator_example
+	gcc -Wall examples/list_example.c -o examples/list_example -lm
+	./examples/list_example

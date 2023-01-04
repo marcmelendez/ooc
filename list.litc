@@ -1,0 +1,425 @@
+                                /* list.litc */
+
+%! begin
+
+I want lists to behave like arrays for different data types, but with the extra
+functionality allowing you to push, pop and sort elements. A standard
+implementation based on C objects leads to an annoying outcome. You see, if I
+pop an element from a list of integers, I want the pop function to return an
+integer, and popping from a list of strings should return a string. However,
+generic return values (either unions or void pointers) would become a nuisance
+in practice, because you will keep having to cast them to the desired types.
+
+After much reflection, I came to the conclusion that it would in the end turn
+out simpler to implement lists as a collection of data structures and simply
+overload the functions to push, pop, sort, etc. with the C11 _Generic macro.
+
+A list will contain the number of elements and a pointer to an array, as well as
+the number of elements that fit into the memory allocated to the list (size) and
+we will create a data structure for every element data type of interest.
+................................................................................
+%! codeblock: list_types
+struct int_list { int n; int * element; int size; };
+struct float_list { int n; float * element; int size; };
+struct double_list { int n; double * element; int size; };
+struct char_list { int n; char * element; int size; };
+struct string_list { int n; char ** element; int size; };
+struct obj_list { int n; void ** element; int size; };
+%! codeblockend
+................................................................................
+
+To initialise a list, we use the list_init function and give it a reference to
+the list and the initial number of elements (all initialized to zero).
+
+If we do not recognise the type of list, we just apply the null_function, so
+that nothing happens.
+................................................................................
+%! codeblock: list_init
+# define list_init(list, size) \
+  _Generic((list), \
+            struct int_list *: int_list_alloc, \
+            struct float_list *: float_list_alloc, \
+            struct double_list *: double_list_alloc, \
+            struct char_list *: char_list_alloc, \
+            struct string_list *: string_list_alloc, \
+            struct obj_list *: obj_list_alloc, \
+            default: null_function)(list, size)
+
+void int_list_alloc(struct int_list * list, int n)
+{list->size = list->n = n; list->element = calloc(n, sizeof(int)); return;}
+
+void float_list_alloc(struct float_list * list, int n)
+{list->size = list->n = n; list->element = calloc(n, sizeof(float)); return;}
+
+void double_list_alloc(struct double_list * list, int n)
+{list->size = list->n = n; list->element = calloc(n, sizeof(double)); return;}
+
+void char_list_alloc(struct char_list * list, int n)
+{list->size = list->n = n; list->element = calloc(n, sizeof(char)); return;}
+
+void string_list_alloc(struct string_list * list, int n)
+{list->size = list->n = n; list->element = calloc(n, sizeof(char *)); return;}
+
+void obj_list_alloc(struct string_list * list, int n)
+{list->size = list->n = n; list->element = calloc(n, sizeof(void *)); return;}
+
+void null_function(void * x, ...) {return;}
+%! codeblockend
+................................................................................
+
+We now introduce methods to set and read the values of the elements. Note that
+these functions do not check that i lies within the right limits (and neither do
+the pop and push methods defined later).
+................................................................................
+%! codeblock: list_set
+# define list_set(list, i, val) \
+  _Generic((list), \
+    struct int_list *: int_list_set, \
+    struct float_list *: float_list_set, \
+    struct double_list *: double_list_set, \
+    struct char_list *: char_list_set, \
+    struct string_list *: string_list_set, \
+    struct obj_list *: obj_list_set, \
+    default: null_function)(list, i, val)
+
+int int_list_set(struct int_list * list, int i, int val)
+{return list->element[i] = val;}
+
+float float_list_set(struct float_list * list, int i, float val)
+{return list->element[i] = val;}
+
+double double_list_set(struct double_list * list, int i, double val)
+{return list->element[i] = val;}
+
+char char_list_set(struct char_list * list, int i, char val)
+{return list->element[i] = val;}
+
+char * string_list_set(struct string_list * list, int i, char * val)
+{return list->element[i] = val;}
+
+void * obj_list_set(struct obj_list * list, int i, void * val)
+{return list->element[i] = val;}
+%! codeblockend
+
+%! codeblock: list_read
+# define list_read(list, i) \
+  _Generic((list), \
+            struct int_list *: int_read, \
+            struct float_list *: float_read, \
+            struct double_list *: double_read, \
+            struct char_list *: char_read, \
+            struct string_list *: string_read, \
+            struct obj_list *: obj_read, \
+            default: null_function)(list, i)
+
+int int_read(struct int_list * list, int i) {return list->element[i];}
+float float_read(struct float_list * list, int i) {return list->element[i];}
+double double_read(struct double_list * list, int i) {return list->element[i];}
+char char_read(struct char_list * list, int i) {return list->element[i];}
+char * string_read(struct string_list * list, int i) {return list->element[i];}
+void * obj_read(struct obj_list * list, int i) {return list->element[i];}
+%! codeblockend
+................................................................................
+
+The slightly more interesting list_pop function returns element number i and
+shifts all subsequent elements by one. It reduces the number of elements in the
+list by one, but does not change the size allocated to the list.
+................................................................................
+%! codeblock: list_pop
+# define list_pop(list, i) \
+  _Generic((list), \
+            struct int_list *: int_list_pop, \
+            struct float_list *: float_list_pop, \
+            struct double_list *: double_list_pop, \
+            struct char_list *: char_list_pop, \
+            struct string_list *: string_list_pop, \
+            struct obj_list *: obj_list_pop, \
+            default: null_function)(list, i)
+
+int int_list_pop(struct int_list * list, int i)
+{
+  int val = list->element[i];
+  for(int n = i; n < list->n - 1; ++n) list->element[n] = list->element[n + 1];
+  (list->n)--;
+  return val;
+}
+
+float float_list_pop(struct float_list * list, int i)
+{
+  float val = list->element[i];
+  for(int n = i; n < list->n - 1; ++n) list->element[n] = list->element[n + 1];
+  (list->n)--;
+  return val;
+}
+
+double double_list_pop(struct double_list * list, int i)
+{
+  double val = list->element[i];
+  for(int n = i; n < list->n - 1; ++n) list->element[n] = list->element[n + 1];
+  (list->n)--;
+  return val;
+}
+
+char char_list_pop(struct char_list * list, int i)
+{
+  char val = list->element[i];
+  for(int n = i; n < list->n - 1; ++n) list->element[n] = list->element[n + 1];
+  (list->n)--;
+  return val;
+}
+
+char * string_list_pop(struct string_list * list, int i)
+{
+  char * val = list->element[i];
+  for(int n = i; n < list->n - 1; ++n) list->element[n] = list->element[n + 1];
+  (list->n)--;
+  return val;
+}
+
+void * obj_list_pop(struct obj_list * list, int i)
+{
+  void * val = list->element[i];
+  for(int n = i; n < list->n - 1; ++n) list->element[n] = list->element[n + 1];
+  (list->n)--;
+  return val;
+}
+%! codeblockend
+................................................................................
+
+When we push elements into the list, we need to check if it will be growing
+beyond its allocated memory. If so, we need to increase the memory reserved for
+the list.
+................................................................................
+%! codeblock: list_push
+# define list_push(list, i, val) \
+  _Generic((list), \
+            struct int_list *: int_list_push, \
+            struct float_list *: float_list_push, \
+            struct double_list *: double_list_push, \
+            struct char_list *: char_list_push, \
+            struct string_list *: string_list_push, \
+            struct obj_list *: obj_list_push, \
+            default: null_function)(list, i, val)
+
+int int_list_push(struct int_list * list, int i, int val)
+{
+  (list->n)++;
+  if(list->n > list->size) {
+    list->size = list->n;
+    list->element = realloc(list->element, list->n*sizeof(int));
+  }
+  for(int n = list->n - 1; n > i; --n) list->element[n] = list->element[n - 1];
+  list->element[i] = val;
+  return val;
+}
+
+float float_list_push(struct float_list * list, int i, float val)
+{
+  (list->n)++;
+  if(list->n > list->size) {
+    list->size = list->n;
+    list->element = realloc(list->element, list->n*sizeof(float));
+  }
+  for(int n = list->n - 1; n > i; --n) list->element[n] = list->element[n - 1];
+  list->element[i] = val;
+  return val;
+}
+
+float double_list_push(struct double_list * list, int i, double val)
+{
+  (list->n)++;
+  if(list->n > list->size) {
+    list->size = list->n;
+    list->element = realloc(list->element, list->n*sizeof(double));
+  }
+  for(int n = list->n - 1; n > i; --n) list->element[n] = list->element[n - 1];
+  list->element[i] = val;
+  return val;
+}
+
+float char_list_push(struct char_list * list, int i, char val)
+{
+  (list->n)++;
+  if(list->n > list->size) {
+    list->size = list->n;
+    list->element = realloc(list->element, list->n*sizeof(char));
+  }
+  for(int n = list->n - 1; n > i; --n) list->element[n] = list->element[n - 1];
+  list->element[i] = val;
+  return val;
+}
+
+char * string_list_push(struct string_list * list, int i, char * val)
+{
+  (list->n)++;
+  if(list->n > list->size) {
+    list->size = list->n;
+    list->element = realloc(list->element, list->n*sizeof(char *));
+  }
+  for(int n = list->n - 1; n > i; --n) list->element[n] = list->element[n - 1];
+  list->element[i] = val;
+  return val;
+}
+
+void * obj_list_push(struct obj_list * list, int i, void * val)
+{
+  (list->n)++;
+  if(list->n > list->size) {
+    list->size = list->n;
+    list->element = realloc(list->element, list->n*sizeof(void *));
+  }
+  for(int n = list->n - 1; n > i; --n) list->element[n] = list->element[n - 1];
+  list->element[i] = val;
+  return val;
+}
+%! codeblockend
+................................................................................
+
+To sort a list, we simply apply the standard qsort function to the array of
+elements, selecting the right comparison function. By default, we sort objects
+according to their memory address, but we define the function as a weak symbol
+so that we can override it in different ways for different applications.
+................................................................................
+%! codeblock: list_sort
+# define list_sort(list) \
+  _Generic((list), \
+            struct int_list *: int_list_sort, \
+            struct float_list *: float_list_sort, \
+            struct double_list *: double_list_sort, \
+            struct char_list *: char_list_sort, \
+            struct string_list *: string_list_sort, \
+            default: null_function)(list)
+
+int int_compare(const void * a, const void * b)
+{return * (int *) a - * (int *) b;}
+
+void int_list_sort(struct int_list * list)
+{qsort(list->element, list->n, sizeof(int), int_compare); return;}
+
+int float_compare(const void * a, const void * b)
+{return * (float *) a - * (float *) b;}
+
+void float_list_sort(struct float_list * list)
+{qsort(list->element, list->n, sizeof(float), float_compare); return;}
+
+int double_compare(const void * a, const void * b)
+{return * (double *) a - * (double *) b;}
+
+void double_list_sort(struct double_list * list)
+{qsort(list->element, list->n, sizeof(double), double_compare); return;}
+
+int char_compare(const void * a, const void * b)
+{return * (char *) a - * (char *) b;}
+
+void char_list_sort(struct char_list * list)
+{qsort(list->element, list->n, sizeof(char), char_compare); return;}
+
+int string_compare(const void * a, const void * b)
+{return strcmp(*(const char **) a, *(const char **) b);}
+
+void string_list_sort(struct string_list * list)
+{qsort(list->element, list->n, sizeof(char *), string_compare); return;}
+
+int __attribute__((weak)) obj_compare(const void * a, const void * b)
+{return a - b;}
+
+void obj_list_sort(struct int_list * list)
+{qsort(list->element, list->n, sizeof(int), obj_compare); return;}
+%! codeblockend
+................................................................................
+
+Once we're done with a list, we can free the memory allocated for the elements
+with list_free.
+................................................................................
+%! codeblock: list_free
+# define list_free(list) \
+  _Generic((list), \
+            struct int_list *: int_free, \
+            struct float_list *: float_free, \
+            struct double_list *: double_free, \
+            struct char_list *: char_free, \
+            struct string_list *: string_free, \
+            struct obj_list *: obj_free, \
+            default: null_function)(list)
+
+void int_free(struct int_list * list) {free(list->element); return;}
+void float_free(struct float_list * list) {free(list->element); return;}
+void double_free(struct double_list * list) {free(list->element); return;}
+void char_free(struct char_list * list) {free(list->element); return;}
+void string_free(struct string_list * list) {free(list->element); return;}
+void obj_free(struct obj_list * list) {free(list->element); return;}
+%! codeblockend
+................................................................................
+
+In list.h we combine all the functions defined above into a header file.
+................................................................................
+%! codefile: list.h
+# ifndef LIST_H
+# define LIST_H
+
+# include <stdio.h>
+# include <stdlib.h>
+# include <string.h>
+
+%! codeinsert: list_types
+
+%! codeinsert: list_init
+
+%! codeinsert: list_set
+
+%! codeinsert: list_read
+
+%! codeinsert: list_pop
+
+%! codeinsert: list_push
+
+%! codeinsert: list_sort
+
+%! codeinsert: list_free
+
+# endif
+%! codeend
+................................................................................
+
+The code below illustrates the basic syntax involved in list manipulations.
+................................................................................
+%! codefile: examples/list_example.c
+# include <stdio.h>
+# include "../list.h"
+
+int main()
+{
+  /* Integer list */
+  struct int_list intl;
+  list_init(&intl, 10);
+  for(int i = 0; i < intl.n; ++i) list_set(&intl, i, i + 1);
+  list_pop(&intl, 2);
+  list_set(&intl, 4, -4);
+  list_push(&intl, 6, -6);
+  printf("Integer list: ");
+  for(int i = 0; i < intl.n; ++i) printf("%d, ", list_read(&intl, i));
+  printf("\n");
+  list_free(&intl);
+
+  /* Pointer to string list */
+  struct string_list * slist = calloc(1, sizeof(struct string_list));
+  list_init(slist, 0);
+  list_push(slist, 0, "Five");
+  list_push(slist, 0, "Four");
+  list_push(slist, 0, "Three");
+  list_push(slist, 0, "Two");
+  list_push(slist, 0, "One");
+  printf("String list: ");
+  for(int i = 0; i < slist->n; ++i) printf("%s, ", list_read(slist, i));
+  list_sort(slist);
+  printf("\nSorted alphabetically: ");
+  for(int i = 0; i < slist->n; ++i) printf("%s, ", list_read(slist, i));
+  printf("\n");
+  list_free(slist);
+  free(slist);
+
+  return 0;
+}
+
+%! codeend
+................................................................................
