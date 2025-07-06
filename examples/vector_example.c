@@ -36,7 +36,7 @@ int main()
   free(vptr);
   free(vptr2);
   printf("\n");
-  fprintf(stderr, "<v, v> = %f\n", vector_dot(v, v));
+  fprintf(stderr, "<v, w> = %f\n", vector_dot(v, w));
   fprintf(stderr, "||v|| = %f\n", vector_norm(v));
   fprintf(stderr, "v x w = ");
   vector_print(vptr = vector_cross(v, w), stdout);
